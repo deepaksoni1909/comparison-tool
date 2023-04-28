@@ -171,7 +171,8 @@
         function readFiles(event) {
             folder = [];
             folderName = "";
-            var files = [...event.target.files].slice(0, 100);
+            /*var files = [...event.target.files].slice(0, 100);*/
+	    var files = [...event.target.files];
             for (const file of files) {
                 folderName = file.webkitRelativePath.substr(0, file.webkitRelativePath.indexOf("/"));
 
