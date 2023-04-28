@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Diff</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="https://stuk.github.io/jszip/dist/jszip.min.js"></script>
+</head>
+
+<body>
+
+    <div id="settings">
+        <h1>Diff</h1>
+        <label><input type="radio" name="diff_type" value="diffChars" checked> Chars</label>
+        <label><input type="radio" name="diff_type" value="diffWords"> Words</label>
+        <label><input type="radio" name="diff_type" value="diffLines" checked> Lines</label>
+    </div>
+
+    <div>
+        <div>
+            <span>Folder 1</span>
+            <input type="file" class="filepicker" name="fileList" webkitdirectory multiple />
+            <span>Folder 2</span>
+            <input type="file" class="filepicker" name="fileList" webkitdirectory multiple />
+            <button onclick="compare()">Compare</button>
+            <button onclick="downloadAllFiles()">Download ZIP</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="accordion" id="accordion">
+            <div class="accordion-item d-none">
+                <button id="accordion-button-1" aria-expanded="false">
+				<span class="accordion-title">Sample</span><span class="icon" aria-hidden="true"></span>
+			</button>
+                <div class="accordion-content">
+                    <table>
+                        <tr>
+                            <td contenteditable="true" id="a">restaurant</td>
+                            <td contenteditable="true" id="b">aura</td>
+                            <td><pre id="result"></pre></td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+
+
+    <script src="diff.js"></script>
+    <script defer>
+        var a = document.getElementById('a');
+        var b = document.getElementById('b');
+        var result = document.getElementById('result');
+
+        function changed() {
+            var diff = JsDiff[window.diffType](a.textContent, b.textContent);
+            var fragment = document.createDocumentFragment();
+            for (var i = 0; i < diff.length; i++) {
+
+                if (diff[i].added && diff[i + 1] && diff[i + 1].removed) {
+                    var swap = diff[i];
+                    diff[i] = diff[i + 1];
+                    diff[i + 1] = swap;
+                }
+
+                var node;
+                if (diff[i].removed) {
+                    if (!diff[i + 1] || !diff[i + 1].added) {
+                        node = document.createElement('del');
+                        node.appendChild(document.createTextNode(diff[i].value));
+                    }
+                } else if (diff[i].added) {
+                    node = document.createElement('ins');
+                    node.appendChild(document.createTextNode(diff[i].value));
+                } else {
+                    node = document.createTextNode(diff[i].value);
+                }
+                fragment.appendChild(node);
+            }
+            //fragment.appendChild(document.createTextNode(" ================================================ "));
+            result.textContent = '';
+            result.appendChild(fragment);
+            result.textContent = getUpdatedData(result.innerHTML, result.textContent);
+            //result.appendChild(document.createTextNode(getUpdatedData(result.innerHTML, result.textContent)));
+            pasteOrChange();
+        }
+
+        window.onload = function() {
+            onDiffTypeChange(document.querySelector('#settings [name="diff_type"]:checked'));
+            changed();
+        };
+
+        function pasteOrChange() {
+            a.onpaste = a.onchange =
+                b.onpaste = b.onchange = changed;
+
+            if ('oninput' in a) {
+                a.oninput = b.oninput = changed;
+            } else {
+                a.onkeyup = b.onkeyup = changed;
+            }
+
+        }
+
+        function onDiffTypeChange(radio) {
+            window.diffType = radio.value;
+            document.title = "Diff " + radio.value.slice(4);
+        }
+
+        var radio = document.getElementsByName('diff_type');
+        for (var i = 0; i < radio.length; i++) {
+            radio[i].onchange = function(e) {
+                onDiffTypeChange(e.target);
+                changed();
+            }
+        }
+
+
+        /* accordian */
+        var items = [];
+
+        function updateAccordion() {
+            items = document.querySelectorAll(".accordion button");
+            items.forEach(item => item.addEventListener('click', toggleAccordion));
+
+            items.forEach(item => item.click());
+        }
+
+        function toggleAccordion() {
+            const itemToggle = this.getAttribute('aria-expanded');
+
+            for (i = 0; i < items.length; i++) {
+                items[i].setAttribute('aria-expanded', 'false');
+            }
+
+            if (itemToggle == 'false') {
+                this.setAttribute('aria-expanded', 'true');
+                const file = this.getAttribute('aria-file');
+
+                a = document.getElementById('a[' + file + ']');
+                b = document.getElementById('b[' + file + ']');
+                result = document.getElementById('result[' + file + ']');
+                changed();
+            }
+        }
+
+        function getUpdatedData(htmlContent, data) {
+            var header = "";
+            var fields = "";
+            var keys = "";
+            header = data.substring(0, (data.indexOf("{")));
+            header = getHeader(header);
+            keys = data.substring(data.indexOf("KEYS"), (data.lastIndexOf("}") - 1));
+            keys = getKeys(keys);
+            fields = data.substring(data.indexOf("FIELDS"), (data.indexOf("KEYS") - 1));
+            fields = getFields(fields, keys[1], htmlContent);
+            data = header + fields + keys[0] + "\n}";
+            return data;
+        }
+
+        /* read folder */
+        var folders = {};
+        var folder = [];
+
+        document.querySelectorAll(".filepicker").forEach(item => item.addEventListener('change', readFiles));
+
+        function readFiles(event) {
+            folder = [];
+            folderName = "";
+            var files = [...event.target.files].slice(0, 100);
+            for (const file of files) {
+                folderName = file.webkitRelativePath.substr(0, file.webkitRelativePath.indexOf("/"));
+
+                readFile(file, (data) => {
+                    path = file.webkitRelativePath.substr(file.webkitRelativePath.indexOf("/"));
+
+                    var header = "";
+                    var fields = "";
+                    var keys = "";
+                    header = data.substring(0, (data.indexOf("{") + 1));
+                    //header = getHeader(header);
+                    fields = data.substring(data.indexOf("FIELDS"), (data.indexOf("KEYS") - 1));
+                    //fields = getFields(fields, keys);
+                    keys = data.substring(data.indexOf("KEYS"), (data.indexOf("FIELDGROUPS") - 1));
+                    //keys = getKeys(keys);
+                    data = header + fields + keys + "}";
+                    folder[path] = data;
+                    folders[folderName] = folder;
+                })
+            }
+        }
+
+        function getHeader(header) {
+            header = header.replace("OBJECT", "").trim();
+            header = header.split(" ");
+            var number = header[1];
+            var name = header.slice(2, header.length).join("_") + "_MIG";
+            return ('table ' + number + ' "' + name + '"{ \n\tCaption = "' + name + '";');
+        }
+
+        function isDeletedFieldsExist(htmlContent, dynamicString) {
+            const regex = new RegExp(`<del>.*?(\\b${dynamicString}\\b).*?<\/del>`, 'gs');
+            const match = regex.exec(htmlContent);
+            if (match) {
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        function getFields(fields, pfields, htmlContent) {
+            var _fields = fields.match(/[^{\}]+(?=})/g);
+            var data = "\n\n\tfields{";
+            _fields.forEach(field => {
+                var f = field.trim().split(";").filter(n => n.trim()).slice(0, 3).map(n => n.trim());
+                var optionString = field.trim().split(";").filter(n => n.trim().startsWith("OptionString")).map(n => n.trim());
+                if (f && f.length > 0) {
+                    if (pfields.includes(f[1]) || isDeletedFieldsExist(htmlContent, f[1])) {
+                        var caption = "'" + f[1] + "';";
+                        f[1] = '"' + f[1] + '"';
+                        f[2] = (f[2].indexOf("Code") == 0) ? "Code[" + f[2].replace("Code", "") + "]" : (
+                            (f[2].indexOf("Text") == 0) ? "Text[" + f[2].replace("Text", "") + "]" : f[2]
+                        );
+                        f = f.join(";");
+                        if (optionString.length > 0) {
+                            var option = '\n\t\t\t OptionMembers = "' + optionString[0].split("=")[1].split(",").join('","') + '";';
+                            caption += option;
+                        }
+                        data += "\n\t\tfield(" + f + "){\n\t\t\t Caption = " + caption + " \n\t\t}"
+                    }
+                }
+            })
+            return "\n\t" + data + "\n\t}";
+
+        }
+
+        function getKeys(keys) {
+            var _keys = keys.match(/[^{\}]+(?=})/g);
+            var _pfields = "";
+            var data = "\n\n\tkeys{";
+            _keys.forEach((key, ind) => {
+                var f = key.trim().split(";").filter(n => n.trim()).slice(0, 2).map(n => n.trim());
+                if (f && f.length > 0) {
+                    data += "\n\t\tkey(Key" + (ind + 1) + ";\"" + f[0].split(",").join('","') + "\"){" + f[1] + "}"
+                    _pfields += f[0];
+                }
+            })
+            data = "\n\t" + data + "\n\t}";
+            return [data, _pfields.split(",")];
+        }
+
+        function readFile(file, callback) {
+            var fr = new FileReader();
+            fr.onload = function() {
+                callback(fr.result);
+            }
+            fr.readAsText(file);
+        }
+
+        function compare() {
+            var folder1 = Object.keys(folders)[0];
+            var folder2 = Object.keys(folders)[1];
+            _html = "";
+
+            Object.keys(folders[folder1]).forEach(_k => {
+                a = folders[folder1][_k];
+                b = folders[folder2][_k];
+
+                _html += '<div class="accordion-item">' +
+                    '<button id="accordion-button-1" aria-expanded="false" aria-file="' + _k + '" >' +
+                    '<span class="accordion-title">' + _k + '</span><span class="icon" aria-hidden="true"></span>' +
+                    '</button>' +
+                    '<div class="accordion-content">' +
+                    '<table>' +
+                    '<tr>' +
+                    '<td contenteditable="true" id="a[' + _k + ']">' + a + '</td>' +
+                    '<td contenteditable="true" id="b[' + _k + ']">' + (b ? b : "") + '</td>' +
+                    '<td><pre id="result[' + _k + ']"></pre></td>' +
+                    '</tr>' +
+                    '</table>' +
+                    '</div>' +
+                    '</div>';
+            })
+
+
+            document.getElementById("accordion").innerHTML = _html;
+            updateAccordion();
+        }
+
+        function downloadAllFiles() {
+            // Get an array of div elements
+            const divs = document.querySelectorAll('pre');
+
+            // Create a new JSZip instance
+            const zip = new JSZip();
+
+            // Loop through the divs and add each one to the zip archive as a separate file
+            for (let i = 0; i < divs.length; i++) {
+                const content = divs[i].textContent;
+                const fileName = divs[i].id.replace("result[/", "").replace("]", "");
+                zip.file(`${fileName}`, content);
+            }
+
+            // Generate a data URI for the zip archive and create a download link for it
+            zip.generateAsync({
+                type: 'blob'
+            }).then(function(content) {
+                const link = document.createElement('a');
+                link.setAttribute('download', 'content.zip');
+                link.setAttribute('href', URL.createObjectURL(content));
+
+                // Simulate a click on the link to trigger the download
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            });
+
+        }
+    </script>
+</body>
+</html>
